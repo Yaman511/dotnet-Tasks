@@ -183,10 +183,13 @@ namespace YourNamespace.Controllers
                         contentType = "video/mp4";
                     }
 
+                    //HttpContext.Response.Headers.Add("TEST", "TEST");
+                    HttpContext.Response.ContentType = contentType;
+                    HttpContext.Response.Headers["File-Name"] = $"{formData.FileName}.{fileInfo.Extension}";
+                    HttpContext.Response.Headers["File-Owner"] = formData.Owner;
+                    //Description still not working?
+                    HttpContext.Response.Headers["File-Description"] = fileInfo.Description;
 
-                    //Response.Headers.Add("File Name", $"{formData.FileName}.{fileInfo.Extension}");
-                    //Response.Headers.Add("File-Owner", formData.Owner);
-                    //Response.Headers.Add("File-Description", fileInfo.Description);
 
 
                     // Use the File method to return the file
