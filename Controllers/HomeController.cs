@@ -188,7 +188,7 @@ namespace YourNamespace.Controllers
                     HttpContext.Response.Headers["File-Name"] = $"{formData.FileName}.{fileInfo.Extension}";
                     HttpContext.Response.Headers["File-Owner"] = formData.Owner;
                     //Description still not working?
-                    HttpContext.Response.Headers["File-Description"] = fileInfo.Description;
+                    //HttpContext.Response.Headers["File-Description"] = fileInfo.Description;
 
 
 
