@@ -195,8 +195,7 @@ namespace YourNamespace.Controllers
 
                     //Response.Headers.Add("File-Description", desc);
                     //Description still not working?
-                    //HttpContext.Response.Headers["File-Description"] = desc;
-                    //HttpContext.Response.Headers.Add("File-Description", fileInfo.Description);
+
 
 
 
