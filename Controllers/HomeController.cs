@@ -6,7 +6,9 @@ using System.IO;
 using System.Linq;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Globalization;
 using Task2.model;
+using System.Diagnostics;
 
 namespace YourNamespace.Controllers
 {
@@ -16,7 +18,7 @@ namespace YourNamespace.Controllers
     {
         private readonly string[] AllowedContentTypes = { "image/jpeg", "video/mp4" };
 
-        [HttpPost("upload")]
+        [HttpPost("Upload")]
         public IActionResult UploadFile([FromForm] FormData formData)
         {
 
@@ -96,12 +98,13 @@ namespace YourNamespace.Controllers
             if (formData.File != null || !string.IsNullOrWhiteSpace(formData.Description))
             {
                 var jsonFilePath = Path.Combine("Files", $"{formData.FileName}.json");
-                var existingJsonContent = JsonConvert.DeserializeObject<FormData>(System.IO.File.ReadAllText(jsonFilePath));
+                var existingJsonContent = JsonConvert.DeserializeObject<FileContent>(System.IO.File.ReadAllText(jsonFilePath));
 
                 if (!string.IsNullOrWhiteSpace(formData.Description))
                 {
                     existingJsonContent.Description = formData.Description;
                 }
+
 
                 System.IO.File.WriteAllText(jsonFilePath, JsonConvert.SerializeObject(existingJsonContent));
 
@@ -110,7 +113,7 @@ namespace YourNamespace.Controllers
                     var existingFilePath = Path.Combine("Files", $"{formData.FileName}");
                     System.IO.File.Delete(existingFilePath);
 
-                    SaveFile(formData.File, existingJsonContent);
+                    Update(formData.File, existingJsonContent);
                 }
 
                 return Ok("File and metadata updated successfully.");
@@ -187,8 +190,12 @@ namespace YourNamespace.Controllers
                     HttpContext.Response.ContentType = contentType;
                     HttpContext.Response.Headers["File-Name"] = $"{formData.FileName}.{fileInfo.Extension}";
                     HttpContext.Response.Headers["File-Owner"] = formData.Owner;
+                    
+                    //var desc = fileInfo.Descriptionl;
+
+                    //Response.Headers.Add("File-Description", desc);
                     //Description still not working?
-                    //HttpContext.Response.Headers["File-Description"] = fileInfo.Description;
+
 
 
 
@@ -197,12 +204,10 @@ namespace YourNamespace.Controllers
                 }
                 catch (JsonException)
                 {
-                    // Handle JSON deserialization errors
                     return StatusCode(500, "Error deserializing metadata file.");
                 }
                 catch (Exception ex)
                 {
-                    // Handle other exceptions
                     Console.WriteLine($"Error retrieving file: {ex.Message}");
                     return StatusCode(500, "Internal Server Error");
                 }
@@ -256,17 +261,165 @@ namespace YourNamespace.Controllers
                 FileName = formData.FileName,
                 Extension = fileExtension,
                 Owner = formData.Owner,
-                Description = formData.Description
+                Description = formData.Description,
+                CreationDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                ModificationDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
             };
 
             System.IO.File.WriteAllText(jsonFilePath, JsonConvert.SerializeObject(metadata));
         }
 
-        [HttpPost("filter")]
-
-        public IActionResult Save()
+        private void Update(IFormFile file, FileContent formData)
         {
-            return Ok();
+            var fileExtension = file.ContentType == "image/jpeg" ? "jpg" : "mp4";
+            var filePath = Path.Combine("Files", $"{formData.FileName}.{fileExtension}");
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                file.CopyTo(stream);
+            }
+
+            var jsonFilePath = Path.Combine("Files", $"{formData.FileName}.json");
+
+            var fileInfo = JsonConvert.DeserializeObject<FileContent>(System.IO.File.ReadAllText(jsonFilePath));
+
+            var metadata = new
+            {
+                FileName = formData.FileName,
+                Extension = fileExtension,
+                Owner = formData.Owner,
+                Description = formData.Description,
+                CreationDate = formData.CreationDate,
+                ModificationDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+
+            System.IO.File.WriteAllText(jsonFilePath, JsonConvert.SerializeObject(metadata));
+        }
+
+        [HttpPost("Filter-By-Date")]
+
+        public IActionResult FilterByDate([FromForm] FilterByDateFormData formData)
+        {
+            if (string.IsNullOrEmpty(formData.StartDate))
+            {
+                return BadRequest("StartDate is required for the 'Filter By Creation Date' operation.");
+            }
+
+            if (!DateTime.TryParse(formData.StartDate, out var startDate))
+            {
+                return BadRequest("Invalid StartDate format");
+            }
+
+            DateTime? endDate = null;
+            if (string.IsNullOrEmpty(formData.EndDate))
+            {
+                return BadRequest("Invalid EndDate format");
+            }
+
+            if (formData.SortType == null)
+            {
+                formData.SortType = SortType.Ascending;
+            }
+
+            string[] jsonFiles = Directory.GetFiles("Files", "*.json");
+
+            List<FileContent> response = new List<FileContent>();
+
+            foreach (var jsonFilePath in jsonFiles)
+            {
+                var metadata = JsonConvert.DeserializeObject<FileContent>(System.IO.File.ReadAllText(jsonFilePath));
+
+                DateTime creationDate = DateTime.Parse(metadata.CreationDate);
+
+                if (metadata.Owner == formData.Owner && creationDate > startDate && (!endDate.HasValue || creationDate < endDate.Value))
+                {
+                    response.Add(new FileContent
+                    {
+                        FileName = metadata.FileName,
+                        CreationDate = creationDate.ToString(),
+                        Owner = metadata.Owner,
+                    });
+                }
+            }
+
+            if (formData.SortType == SortType.Ascending)
+            {
+                response = response.OrderBy(file => file.CreationDate).ToList();
+            }
+            else if (formData.SortType == SortType.Descending)
+            {
+                response = response.OrderByDescending(file => file.CreationDate).ToList();
+            }
+
+            return Ok(response);
+        }
+
+
+        [HttpPost("Filter-By-User")]
+
+        public IActionResult FilterByUser([FromForm] FilterByUserFormData formData)
+        {
+            if (formData.Name == null || formData.Name.Length == 0)
+            {
+                return BadRequest("At least one UserName is required for the 'Filter By User' operation.");
+            }
+
+            if (string.IsNullOrEmpty(formData.StartDate))
+            {
+                return BadRequest("StartDate is required for the 'Filter By User' operation.");
+            }
+
+            if (!DateTime.TryParse(formData.StartDate, out var startDate))
+            {
+                return BadRequest("Invalid StartDate format");
+            }
+
+            DateTime? endDate = null;
+            if (string.IsNullOrEmpty(formData.EndDate))
+            {
+                return BadRequest("Invalid EndDate format");
+            }
+
+            if (formData.SortType == null)
+            {
+                formData.SortType = SortType.Ascending;
+            }
+
+            string[] jsonFiles = Directory.GetFiles("Files", "*.json");
+
+            List<FileContent> response = new List<FileContent>();
+
+            foreach (var jsonFilePath in jsonFiles)
+            {
+                var metadata = JsonConvert.DeserializeObject<FileContent>(System.IO.File.ReadAllText(jsonFilePath));
+
+                if (formData.Name.Contains(metadata.Owner))
+                {
+                    DateTime creationDate = DateTime.Parse(metadata.CreationDate);
+
+                    if (creationDate > startDate && (!endDate.HasValue || creationDate < endDate.Value))
+                    {
+                        response.Add(new FileContent
+                        {
+                            FileName = metadata.FileName,
+                            Owner = metadata.Owner,
+                            CreationDate = creationDate.ToString(),
+                            ModificationDate = metadata.ModificationDate
+                        });
+                    }
+                }
+            }
+
+            if (formData.SortType == SortType.Ascending)
+            {
+                response = response.OrderBy(file => file.CreationDate).ToList();
+            }
+            else if (formData.SortType == SortType.Descending)
+            {
+                response = response.OrderByDescending(file => file.CreationDate).ToList();
+            }
+
+            return Ok(response);
         }
     }
 
